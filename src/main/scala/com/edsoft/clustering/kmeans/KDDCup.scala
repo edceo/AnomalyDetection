@@ -10,27 +10,25 @@ object KDDCup {
     val kMeansSpecial = new KMeansSpecial()
     val conf = new SparkConf().setMaster("local[10]").setAppName("KDD Cup Example")
     val sc = new SparkContext(conf)
-
-    val rawData = sc.textFile("/home/khadija/Desktop/khadija/SparkExample/src/main/resources/kddnormalData.data")
-    val newData = sc.textFile("/home/khadija/Desktop/khadija/SparkExample/src/main/resources/attaks49.da")
+    val rawData = sc.textFile("/home/khadija/Desktop/khadija/SparkExample/src/main/resources/kddcupnormal.data")
+    //newDtata represents the tested data
+    val newData = sc.textFile("/home/khadija/Desktop/khadija/SparkExample/src/main/resources/kddanomalytest100.data")
     //val rawData = sc.textFile("/home/edsoft/KDD/SparkExample/src/main/resources/normalData.data", 120)
-
-
     val dataAndLabel = kMeansSpecial.dataFormat(rawData)
-
     val data = dataAndLabel.values.cache()
     val label = dataAndLabel.keys.cache()
     val normalizedData = kMeansSpecial.dataNormalize(data)
-    //kMeansSpecial.clusteringScore(normalizedData, label, 18)
+
+
+    // kMeansSpecial.clusteringScore(normalizedData, label, 60)
     //kMeansSpecial.clusterLableCount(dataAndLabel,kMeansSpecial.model)
     //kMeansSpecial.clusteringScore(data, label, 100)
-    //(2 to 12 by 2).map(k => (k, kMeansSpecial.clusteringScore(normalizedData, k))).foreach(println)
+    //(5 to 55 by 10).map(k => (k, kMeansSpecial.clusteringScore(normalizedData, k))).foreach(println)
+
     /*
     * tested side
     *
     **/
-
-
     val newDataDataAndLabel = kMeansSpecial.dataFormat(newData)
     val newDataData = newDataDataAndLabel.values.cache()
     val newDataLabel = newDataDataAndLabel.keys.cache()
@@ -48,5 +46,6 @@ object KDDCup {
 
     //println(count)
     //kMeansSpecial.anomalyDetection(NewDatanormalized).foreach(println)
+
   }
 }
