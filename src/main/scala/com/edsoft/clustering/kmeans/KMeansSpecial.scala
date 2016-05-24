@@ -18,22 +18,6 @@ class KMeansSpecial() extends Serializable {
   var stdevs: Array[Double]=null
 
 
-  //def getColumns(dataFrame: RDD[String])=dataFrame.map(r => r(0)).collect()
-  /*def toRDD(m: Matrix): RDD[Vector] = {
-    val columns = m.toArray.grouped(m.numRows)
-    val rows = columns.toSeq.transpose // Skip this if you want a column-major RDD.
-    val vectors = rows.map(row => new DenseVector(row.toArray))
-    sc.parallelize(vectors)
-  }
-  def getColumns(data: RDD[String])={
-    val raw = data.map(_.toArray)
-    val n = raw.first().length
-    val rdds: Vector[RDD[String]] = (1 to n).map(i => raw
-      .map(r => Try(r(i)))
-      .filter(_.isSuccess)
-      .map(_.get)
-    ).toVector}*/
-
   private def distance(a: Array[Double], b: Array[Double]) =
     sqrt(a.zip(b).map(p => p._1 - p._2).map(d => d * d).sum)
 
@@ -50,6 +34,17 @@ class KMeansSpecial() extends Serializable {
       val newProtocolFeatures = new Array[Double](protocols.size)
       newProtocolFeatures(protocols(protocol)) = 1.0
       //buffer.insertAll(1, newProtocolFeatures.map(_.toString))
+      val vector = Vectors.dense(buffer.map(_.toDouble).toArray)
+      (label, vector)
+    }
+  }
+
+
+  def CategoricalDataFormat(rawData: RDD[String]) = {
+    val labelsAndData = rawData.map { line =>
+      val buffer = line.split(",").toBuffer
+      buffer.remove(1,3)
+      val label = buffer.remove(buffer.length - 1)
       val vector = Vectors.dense(buffer.map(_.toDouble).toArray)
       (label, vector)
     }
@@ -107,6 +102,25 @@ class KMeansSpecial() extends Serializable {
       model.clusterCenters(model.predict(datum))
     distance(centroid.toArray, datum.toArray)
   }
+
+
+
+  def calculateThreshold(datum: Vector, model: KMeansModel,maxDistance: Double)={
+    val centroid =
+      model.clusterCenters(model.predict(datum))
+    getThreshold(centroid.toArray, datum.toArray,maxDistance)
+  }
+
+  private def getThreshold(a: Array[Double], b: Array[Double],maxDistance: Double) =
+    a.zip(b).map(p =>(p._1 - p._2).abs ).map(d => d /maxDistance).sum
+
+  private def getOutliers(a: Array[Double], b: Array[Double]) ={
+    a.zip(b).map(p => if (p._1 > p._2)  p._1 else p._2).sum
+  }
+  def calculateAutlires(datum: Vector,datum1: RDD[Double])={
+    getOutliers(datum.toArray, datum1.toArray())
+  }
+
 
   /**
     * This function prepare data for calculating entropy
@@ -176,44 +190,30 @@ class KMeansSpecial() extends Serializable {
 
   def KmeansWithAnomalyDetection(normalizedData: RDD[Vector],newData: RDD[Vector])={
     val kmeans = new KMeans()
-    kmeans.setK(18)
-    kmeans.setRuns(10)
+    kmeans.setK(50)
+    kmeans.setRuns(15)
     kmeans.setEpsilon(1.0e-6)
     val nModel=kmeans.run(normalizedData)
-    //def distance(a: Array[Double],b: Array[Double])= sqrt(a.zip(b).map(p=>p._1-p._2).map(d=> d*d).sum)
-
     val centroids=nModel.clusterCenters
+
+   //calculating the threshold value
     val distances=normalizedData.map(datum => distToCentroid(datum, nModel))
-    //val distances=normalizedData.map(datum => (distance(centroids(nModel.predict(datum),datum)),datum),datum)
-    val n=distances.count()
-    println("the distances count is")
-    println(n)
-    //val nThreshold = distances.top(39000).last
-    val nThreshold =0.1
-
-
-    //println("cluster centroids are:")
-    //centroids.foreach(f => println(f))
-    /* println("new data is:")
-     newData.foreach(f => println(f))*/
-    //val testMaodel=kmeans.run(newData)
-    //val newDistances=newData.map(datum => distToCentroid(datum, testMaodel))
-
+    val maxDistance=distances.max()
+    val thresholds=normalizedData.map(datum => calculateThreshold(datum, nModel,maxDistance))
+    val nThreshold=thresholds.sampleStdev()
+   //filtering the anomaly connections inside the testing data
+    val TrainingDtatDistances=newData.map(datum => distToCentroid(datum, nModel))
     val anomalies=newData.filter(d => distToCentroid(d,nModel) > nThreshold)
-    val dis=newData.map(f=> distToCentroid(f,nModel))
-    /*println("anomaly data is:")
-    anomalies.foreach(f => println(f))*/
-    println("the distnces are:")
-    dis.foreach(f => println(f))
+    TrainingDtatDistances.foreach(f => println(f))
+
     println("the threshold value is:")
     println(nThreshold)
-    println("the anomaly connections are:")
     val testedDataCount= newData.count()
-    val anomaliesCount = anomalies.count()
-    println(testedDataCount)
+    val anomaliesCount=anomalies.count
+    println("anomalies count")
     println(anomaliesCount)
-    //println(f"$testedDataCount%18s$anomaliesCount")
-    anomalies.foreach(f => println(f))
+    println("tested data count")
+    println(testedDataCount)
 
   }
 
@@ -227,7 +227,9 @@ class KMeansSpecial() extends Serializable {
       case (label,data) => (aModel.predict(data),label)
     }.countByValue
     clusterLabelCount.toList.sorted.foreach{
-      case ((_,label),count) => println(f"$label%18s$count%8s")
+      case ((cluster,label),count) => println(f"$cluster%1s$label%18s$count%8s")
     }
   }
+
+
 }
