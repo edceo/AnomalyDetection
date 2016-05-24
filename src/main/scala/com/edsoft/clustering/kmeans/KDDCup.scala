@@ -12,7 +12,7 @@ object KDDCup {
     val sc = new SparkContext(conf)
 
     val rawData = sc.textFile("/home/khadija/Desktop/khadija/SparkExample/src/main/resources/kddnormalData.data")
-    val newData = sc.textFile("/home/khadija/Desktop/khadija/SparkExample/src/main/resources/attaks49.data")
+    val newData = sc.textFile("/home/khadija/Desktop/khadija/SparkExample/src/main/resources/attaks49.da")
     //val rawData = sc.textFile("/home/edsoft/KDD/SparkExample/src/main/resources/normalData.data", 120)
 
 
