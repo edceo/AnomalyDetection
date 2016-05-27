@@ -11,58 +11,46 @@ import org.apache.spark.{SparkContext, SparkConf}
 object MultivariateKDDCup {
   def main(args: Array[String]) {
 
-    if (args.length != 4) {
-      System.err.println(
-        "Usage: MultivariateGaussianDistribution " +
-          "<dataFile> <cvDataFile> <cvPredictionsFile> <outputDir>")
-      System.exit(1)
-    }
+    val outputDir = "/home/kora/" //add where to save the output results
 
-    val dataFile = args(0) //original data
-    val cvDataFile = args(1) //tested data
-    val cvPredictions = args(2) //lable
-    val outputDir = args(3) //where to save the output results
-
-    val conf = new SparkConf().setMaster("local[10]").setAppName("KDD Cup Example Multivariate Gaussian")
+    val conf = new SparkConf().setMaster("local[*]").setAppName("KDD Cup Example Multivariate Gaussian")
     val sc = new SparkContext(conf)
 
-    val rawData = sc.textFile("/home/edsoft/KDD/SparkExample/src/main/resources/kddcup.data", 120)
+    //Add training and test file Path
+    val rawData = sc.textFile("/home/kora/IdeaProjects/AnomalyDetection/src/main/resources/" +
+      "kddcupnormal.data")
+    val newData = sc.textFile("/home/kora/IdeaProjects/AnomalyDetection/src/main/resources/" +
+      "kddanomalytest100.data")
+
     val multiSpecial = new MultivariateSpecial()
 
-    val data = multiSpecial.dataFormat(rawData)
+    val trainingData = multiSpecial.dataFormat(rawData)
+    val testData = multiSpecial.dataFormat(newData)
 
-    val dataArray = data.map(_._2.toArray)
+    val trainingDataArray = trainingData.map(_.features.toArray)
 
-    val m = dataArray.count()
-    val n = dataArray.first().length
+    val m = trainingDataArray.count()
+    val n = trainingDataArray.first().length
 
 
-    val sums = dataArray.reduce((a, b) => a.zip(b).map(t => t._1 + t._2))
+    val sums = trainingDataArray.reduce((a, b) => a.zip(b).map(t => t._1 + t._2))
     val mean = sums.map(_ / m)
 
 
-    val subMuSquares = dataArray.aggregate(new Array[Double](n))((a, b) => a.zip(b).zipWithIndex.map { t =>
+    val subMuSquares = trainingDataArray.aggregate(new Array[Double](n))((a, b) => a.zip(b).zipWithIndex.map { t =>
       val diffMu = t._1._2 - mean(t._2)
       t._1._1 + (diffMu * diffMu)
     }, (acc1, acc2) => acc1.zip(acc2).map(a => a._1 + a._2))
     val sigma2 = subMuSquares.map(_ / m)
 
     val multivariateGaussian = new MultivariateGaussian(Vectors.dense(mean), Matrices.diag(Vectors.dense(sigma2)))
-    val ps = data.values.map(multivariateGaussian.pdf)
-
-
-    val inputCV_X = sc.textFile(cvDataFile)
-    val inputCV_Y = sc.textFile(cvPredictions)
-    val examplesCV_X = inputCV_X.filter(s => s.length > 0 && !s.startsWith("#"))
-    val examplesCV_Y = inputCV_Y.filter(s => s.length > 0 && !s.startsWith("#"))
+    val ps = trainingData.map(_.features).map(multivariateGaussian.pdf)
 
     // Examples for cross-validation set along with "ground truth" for each example, i.e. explicitly marked as anomalous/non-anomalous
-    val examplesCV = examplesCV_X.zip(examplesCV_Y).map {
-      case (l1, l2) => LabeledPoint(l2.trim.toDouble, Vectors.dense(l1.trim.split(' ').map(_.toDouble)))
-    }.persist()
+    testData.persist()
 
     // Vector of probability density for cross validation set using learned parameters
-    val psLabCV = examplesCV.map(lp => (multivariateGaussian.pdf(lp.features), lp.label))
+    val psLabCV = testData.map(lp => (multivariateGaussian.pdf(lp.features), lp.label))
     val minPsCV = psLabCV.map(_._1).min()
     val maxPsCV = psLabCV.map(_._1).max()
 
