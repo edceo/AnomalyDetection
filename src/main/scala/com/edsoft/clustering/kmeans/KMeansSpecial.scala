@@ -1,10 +1,14 @@
 package com.edsoft.clustering.kmeans
 
-import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
+import org.apache.spark.mllib.clustering.{KMeans, KMeansModel, StreamingKMeans}
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.dstream.DStream
+
 import scala.collection.mutable.ArrayBuffer
 import scala.math._
+
 /**
   * Created by edsoft on 3/21/16.
   * Bir kümedeki vektörleri centroidden olan uzaklıkların toplamı = clustering score
@@ -14,8 +18,8 @@ class KMeansSpecial() extends Serializable {
 
   var threshold: Double = 0.0
   var model: KMeansModel = null
-  var means: Array[Double]=null
-  var stdevs: Array[Double]=null
+  var means: Array[Double] = null
+  var stdevs: Array[Double] = null
 
 
   private def distance(a: Array[Double], b: Array[Double]) =
@@ -40,10 +44,10 @@ class KMeansSpecial() extends Serializable {
   }
 
 
-  def CategoricalDataFormat(rawData: RDD[String]) = {
+  def categoricalDataFormat(rawData: RDD[String]) = {
     val labelsAndData = rawData.map { line =>
       val buffer = line.split(",").toBuffer
-      buffer.remove(1,3)
+      buffer.remove(1, 3)
       val label = buffer.remove(buffer.length - 1)
       val vector = Vectors.dense(buffer.map(_.toDouble).toArray)
       (label, vector)
@@ -93,7 +97,7 @@ class KMeansSpecial() extends Serializable {
      labelCounts.map(m => m.sum * entropy(m)).sum / n*/
   }
 
-  def anomalyDetection(newData: RDD[Vector],model: KMeansModel,threshold: Double) = {
+  def anomalyDetection(newData: RDD[Vector], model: KMeansModel, threshold: Double) = {
     newData.filter(f => distToCentroid(f, model) > threshold)
   }
 
@@ -104,20 +108,20 @@ class KMeansSpecial() extends Serializable {
   }
 
 
-
-  def calculateThreshold(datum: Vector, model: KMeansModel,maxDistance: Double)={
+  def calculateThreshold(datum: Vector, model: KMeansModel, maxDistance: Double) = {
     val centroid =
       model.clusterCenters(model.predict(datum))
-    getThreshold(centroid.toArray, datum.toArray,maxDistance)
+    getThreshold(centroid.toArray, datum.toArray, maxDistance)
   }
 
-  private def getThreshold(a: Array[Double], b: Array[Double],maxDistance: Double) =
-    a.zip(b).map(p =>(p._1 - p._2).abs ).map(d => d /maxDistance).sum
+  private def getThreshold(a: Array[Double], b: Array[Double], maxDistance: Double) =
+    a.zip(b).map(p => (p._1 - p._2).abs).map(d => d / maxDistance).sum
 
-  private def getOutliers(a: Array[Double], b: Array[Double]) ={
-    a.zip(b).map(p => if (p._1 > p._2)  p._1 else p._2).sum
+  private def getOutliers(a: Array[Double], b: Array[Double]) = {
+    a.zip(b).map(p => if (p._1 > p._2) p._1 else p._2).sum
   }
-  def calculateAutlires(datum: Vector,datum1: RDD[Double])={
+
+  def calculateAutlires(datum: Vector, datum1: RDD[Double]) = {
     getOutliers(datum.toArray, datum1.toArray())
   }
 
@@ -167,7 +171,8 @@ class KMeansSpecial() extends Serializable {
     means = sums.map(_ / n)
     data.map(this.normalize(_, means, stdevs))
   }
-  def dataNormalizeForTestedData(data: RDD[Vector],means: Array[Double], stdevs: Array[Double]) = {
+
+  def dataNormalizeForTestedData(data: RDD[Vector], means: Array[Double], stdevs: Array[Double]) = {
     data.unpersist(true)
     val dataAsArray = data.map(_.toArray)
     data.map(this.normalize(_, means, stdevs))
@@ -188,46 +193,66 @@ class KMeansSpecial() extends Serializable {
     }.sum
   }
 
-  def KmeansWithAnomalyDetection(normalizedData: RDD[Vector],newData: RDD[Vector])={
+  def anomalyDetectionWithKMeans(normalizedData: RDD[Vector], newData: RDD[Vector]) = {
     val kmeans = new KMeans()
     kmeans.setK(50)
     kmeans.setRuns(15)
     kmeans.setEpsilon(1.0e-6)
-    val nModel=kmeans.run(normalizedData)
-    val centroids=nModel.clusterCenters
+    val nModel = kmeans.run(normalizedData)
+    val centroids = nModel.clusterCenters
 
-   //calculating the threshold value
-    val distances=normalizedData.map(datum => distToCentroid(datum, nModel))
-    val maxDistance=distances.max()
-    val thresholds=normalizedData.map(datum => calculateThreshold(datum, nModel,maxDistance))
-    val nThreshold=thresholds.sampleStdev()
-   //filtering the anomaly connections inside the testing data
-    val TrainingDtatDistances=newData.map(datum => distToCentroid(datum, nModel))
-    val anomalies=newData.filter(d => distToCentroid(d,nModel) > nThreshold)
-    TrainingDtatDistances.foreach(f => println(f))
+    //calculating the threshold value
+    val distances = normalizedData.map(datum => distToCentroid(datum, nModel))
+    val maxDistance = distances.max()
+    val thresholds = normalizedData.map(datum => calculateThreshold(datum, nModel, maxDistance))
+    val nThreshold = thresholds.sampleStdev()
+    //filtering the anomaly connections inside the testing data
+    val trainingDataDistance = newData.map(datum => distToCentroid(datum, nModel))
+    val anomalies = newData.filter(d => distToCentroid(d, nModel) > nThreshold)
+    trainingDataDistance.foreach(f => println(f))
 
     println("the threshold value is:")
     println(nThreshold)
-    val testedDataCount= newData.count()
-    val anomaliesCount=anomalies.count
+    val testedDataCount = newData.count()
+    val anomaliesCount = anomalies.count
     println("anomalies count")
     println(anomaliesCount)
     println("tested data count")
     println(testedDataCount)
+  }
 
+  /**
+    *
+    * @param ssc
+    * @param normalizedData
+    * @param newData
+    */
+  def anomalyDetectionWithStreamingKMeans(ssc: StreamingContext,
+                                          normalizedData: DStream[Vector],
+                                          newData: DStream[Vector]) = {
+    val model = new StreamingKMeans()
+    model.setK(50) //Number of Cluster
+    model.setDecayFactor(1.0)
+    model.setRandomCenters(3, 0.0)
+    model.trainOn(normalizedData)
+    model.predictOn(newData).print
+
+    ssc.start()
+    ssc.awaitTermination()
   }
 
   /**
     * for counting the number of data vectors in each cluster
+    *
     * @param dataAndLabel
     * @param aModel
     */
-  def clusterLableCount(dataAndLabel: RDD[(String,Vector)],aModel: KMeansModel)={
-    val  clusterLabelCount = dataAndLabel.map{
-      case (label,data) => (aModel.predict(data),label)
+  def clusterLableCount(dataAndLabel: RDD[(String, Vector)], aModel: KMeansModel) = {
+    val clusterLabelCount = dataAndLabel.map {
+      case (label, data) => (aModel.predict(data), label)
     }.countByValue
-    clusterLabelCount.toList.sorted.foreach{
-      case ((cluster,label),count) => println(f"$cluster%1s$label%18s$count%8s")
+    clusterLabelCount.toList.sorted.foreach {
+      case ((cluster, label), count) => println(f"$cluster%1s$label%18s$count%8s")
     }
   }
 

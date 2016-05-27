@@ -41,7 +41,7 @@ object KDDCup {
     //kMeansSpecial.model.clusterCenters.foreach(f => println(f))
     //println("tested data is:")
     //newDataData.foreach(f=>println(f))
-    kMeansSpecial.KmeansWithAnomalyDetection(normalizedData,newDatanormalized)
+    kMeansSpecial.anomalyDetectionWithKMeans(normalizedData,newDatanormalized)
     //val count=kMeansSpecial.anomalyDetection(newDataData,kMeansSpecial.model,kMeansSpecial.threshold).count()
 
     //println(count)
